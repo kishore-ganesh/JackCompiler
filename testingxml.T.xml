@@ -1,0 +1,29 @@
+<class>
+<keyword> class </keyword>
+<identifier> MyClass </identifier>
+<symbol>{</symbol>
+<classVarDec>
+<keyword> field </keyword>
+<keyword> int </keyword>
+<identifier> testype </identifier>
+<symbol>;</symbol>
+</classVarDec>
+<subroutineDec>
+<keyword> function </keyword>
+<keyword> void </keyword>
+<identifier> run </identifier>
+<symbol>(</symbol>
+<parameterList>
+</parameterList>
+<symbol>)</symbol>
+<symbol>{</symbol>
+<statements>
+<returnStatement>
+<keyword> return </keyword>
+<symbol>;</symbol>
+</returnStatement>
+</statements>
+<symbol>}</symbol>
+</subroutineDec>
+<symbol>}</symbol>
+</class>

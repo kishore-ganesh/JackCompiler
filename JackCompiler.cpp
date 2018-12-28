@@ -90,7 +90,7 @@ string removeComments(string input)
     }
 
     // cout<<input<<endl;
-    // cout<<output<<endl;
+    cout<<output<<endl;
 
     output += input[input.size() - 1];
 
@@ -206,12 +206,22 @@ class JackTokenizer
 
     void advanceTillValid()
     {
-        prevIndex = index;
-        prevToken = currentToken;
+        if(nextToken==""){
+            prevIndex = index;
+        
+        }
+        else{
+            prevIndex = index-1;
+        }
+
+    prevToken = currentToken;        
+        cout<<prevIndex<<" ";
         do
         {
             advance();
-        } while (tokenType() == INVALID);
+        } while (hasMoreTokens()&&tokenType() == INVALID);
+
+        cout<<index<<endl;
     }
     bool isSymbol(string token)
     {
@@ -250,8 +260,8 @@ class JackTokenizer
 
     void advance()
     {
-        prevIndex = index;
-        prevToken = currentToken;
+        // prevIndex = index;
+        // prevToken = currentToken;
         getNextToken();
     }
 
@@ -645,7 +655,7 @@ class JackTokenizer
         writer.writeLine("<tokens>");
         while (hasMoreTokens())
         {
-            advance();
+            advanceTillValid();
             switch (tokenType())
             {
 
@@ -724,7 +734,7 @@ class CompilationEngine
         this->tokenizer = tokenizer;
         this->outputPath = outputPath;
         this->writer = FileWriter(outputPath);
-        tokenizer.advance();
+        tokenizer.advanceTillValid();
         compileClass();
     }
 
@@ -738,7 +748,7 @@ class CompilationEngine
 
         while (tokenizer.hasMoreTokens())
         {
-            tokenizer.advance();
+            tokenizer.advanceTillValid();
 
             if (tokenizer.tokenType() == IDENTIFIER || tokenizer.tokenType() == SYMBOL)
             {
@@ -786,7 +796,7 @@ class CompilationEngine
         writer.writeLine("<parameterList>");
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ')'))
         {
-            tokenizer.advance();
+            tokenizer.advanceTillValid();
             if (tokenizer.tokenType() == KEYWORD || tokenizer.tokenType() == IDENTIFIER)
             {
                 writer.writeLine(tokenizer.getXML());
@@ -832,7 +842,7 @@ class CompilationEngine
                 }
             }
 
-            tokenizer.advance();
+            tokenizer.advanceTillValid();
         }
         writer.writeLine("</statements>");
         writer.writeLine(tokenizer.getXML());
@@ -844,7 +854,7 @@ class CompilationEngine
         writer.writeLine(tokenizer.getXML());
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
-            tokenizer.advance();
+            tokenizer.advanceTillValid();
 
             if (tokenizer.tokenType() == IDENTIFIER || tokenizer.tokenType() == SYMBOL || tokenizer.tokenType() == KEYWORD)
             {
@@ -867,7 +877,7 @@ class CompilationEngine
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
 
-            tokenizer.advance();
+            tokenizer.advanceTillValid();
             if (tokenizer.tokenType() == SYMBOL || tokenizer.tokenType() == IDENTIFIER)
             {
                 writer.writeLine(tokenizer.getXML());
@@ -883,9 +893,8 @@ class CompilationEngine
                 }
             }
         }
-        
+
         writer.writeLine("</letStatement>");
-        
     }
 
     void compileWhile()
@@ -894,7 +903,7 @@ class CompilationEngine
         writer.writeLine(tokenizer.getXML());
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
         {
-            tokenizer.advance();
+            tokenizer.advanceTillValid();
             if (tokenizer.tokenType() == SYMBOL)
             {
                 writer.writeLine(tokenizer.getXML()); //make this ebtter
@@ -919,7 +928,6 @@ class CompilationEngine
         writer.writeLine("<returnStatement>");
         writer.writeLine(tokenizer.getXML());
 
-
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
             tokenizer.advanceTillValid();
@@ -932,8 +940,6 @@ class CompilationEngine
 
         writer.writeLine(tokenizer.getXML());
         writer.writeLine("</returnStatement>");
-
-        
     }
 
     //problematic
@@ -946,7 +952,7 @@ class CompilationEngine
         {
             while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
             {
-                tokenizer.advance();
+                tokenizer.advanceTillValid();
                 if (tokenizer.tokenType() == SYMBOL)
                 {
                     writer.writeLine(tokenizer.getXML());
@@ -966,13 +972,13 @@ class CompilationEngine
             //Loop
         }
 
-        tokenizer.advance();
+        tokenizer.advanceTillValid();
         if (tokenizer.keyWord() == ELSE)
         {
             writer.writeLine(tokenizer.getXML());
             while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
             {
-                tokenizer.advance();
+                tokenizer.advanceTillValid();
                 if (tokenizer.tokenType() == SYMBOL)
                 {
                     writer.writeLine(tokenizer.getXML());
@@ -984,7 +990,8 @@ class CompilationEngine
             }
         }
 
-        else{
+        else
+        {
             tokenizer.rollBack();
         }
         writer.writeLine("</ifStatement>");
@@ -1020,7 +1027,65 @@ class CompilationEngine
 
         writer.writeLine("<term>");
         // tokenizer.advanceTillValid();
+
         writer.writeLine(tokenizer.getXML());
+        if (tokenizer.tokenType() == IDENTIFIER)
+        {
+            tokenizer.advanceTillValid();
+
+            if (tokenizer.tokenType()==SYMBOL)
+            {
+                switch (tokenizer.symbol())
+                {
+                case '.':
+                {
+                    writer.writeLine(tokenizer.getXML());
+                    tokenizer.advanceTillValid();
+                    writer.writeLine(tokenizer.getXML());
+                    tokenizer.advanceTillValid();
+                    writer.writeLine(tokenizer.getXML());
+                    compileExpressionList();
+                    break;
+                }
+                case '(':
+                {
+                    writer.writeLine(tokenizer.getXML());
+                    compileExpressionList();
+                    break;
+                }
+                case '[':
+                {
+                    writer.writeLine(tokenizer.getXML());
+                    compileExpression();
+                    writer.writeLine(tokenizer.getXML());
+                    break;
+                }
+
+                default:
+                {
+                    tokenizer.rollBack();
+                }
+                }
+            }
+
+            else
+            {
+                tokenizer.rollBack();
+            }
+        }
+
+        else if (tokenizer.tokenType() == SYMBOL && (tokenizer.symbol() == '-' || tokenizer.symbol() == '~'))
+        {
+            tokenizer.advanceTillValid();
+            compileTerm();
+        }
+
+        else if(tokenizer.tokenType()==SYMBOL&&tokenizer.symbol()=='('){
+            compileExpression();
+            writer.writeLine(tokenizer.getXML());
+        }
+
+        // if()
         // if(tokeni)
 
         writer.writeLine("</term>");
@@ -1034,7 +1099,16 @@ class CompilationEngine
         do
         {
             tokenizer.advanceTillValid();
-            if (tokenizer.tokenType() == SYMBOL)
+             if(tokenizer.tokenType()!=SYMBOL||tokenizer.symbol()=='(')
+            {
+                tokenizer.rollBack();
+                compileExpression();
+                if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ',')
+                {
+                    writer.writeLine(tokenizer.getXML());
+                }
+            }
+            else if (tokenizer.tokenType() == SYMBOL)
             {
                 if (tokenizer.symbol() != ')')
                 {
@@ -1042,15 +1116,7 @@ class CompilationEngine
                 }
             }
 
-            else
-            {
-                tokenizer.rollBack();
-                compileExpression();
-                if(tokenizer.tokenType()==SYMBOL&&tokenizer.symbol()==',')
-                {
-                    writer.writeLine(tokenizer.getXML());
-                }
-            }
+           
         } while (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ',');
 
         writer.writeLine("</expressionList>");
@@ -1064,7 +1130,7 @@ class CompilationEngine
     {
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
-            tokenizer.advance();
+            tokenizer.advanceTillValid();
             if (tokenizer.tokenType() == KEYWORD || tokenizer.tokenType() == SYMBOL || tokenizer.tokenType() == IDENTIFIER)
             {
                 writer.writeLine(tokenizer.getXML());
@@ -1093,7 +1159,7 @@ class CompilationEngine
         // cout<<"Y"<<endl;
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '{'))
         {
-            tokenizer.advance();
+            tokenizer.advanceTillValid();
             if (tokenizer.tokenType() == KEYWORD)
             {
                 writer.writeLine(tokenizer.getXML());
@@ -1121,8 +1187,8 @@ class CompilationEngine
         // cout<<tokenizer.tokenType()<<endl;
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
         {
-            tokenizer.advance();
-            cout<<tokenizer.keyWord()<<endl;
+            tokenizer.advanceTillValid();
+            // cout << tokenizer.keyWord() << endl;
             // cout<<tokenizer.keyWord()<<endl;
             if (tokenizer.tokenType() == KEYWORD)
             {
