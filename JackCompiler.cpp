@@ -120,6 +120,7 @@ class FileWriter
 class JackTokenizer
 {
     string currentToken;
+    string prevToken = "";
     string nextToken;
     string fileBuffer = "";
     int currentTokenType;
@@ -155,7 +156,7 @@ class JackTokenizer
 
     bool hasMoreTokens()
     {
-        return index != fileBuffer.size();
+        return index < fileBuffer.size();
     }
 
     bool isSymbol(char c)
@@ -172,6 +173,46 @@ class JackTokenizer
         return false;
     }
 
+    bool isOperand()
+    {
+        if (currentToken.size() == 1 && tokenType() == SYMBOL)
+        {
+            char c = currentToken[0];
+            switch (c)
+            {
+            case '+':
+                return true;
+            case '-':
+                return true;
+            case '*':
+                return true;
+            case '/':
+                return true;
+            case '&':
+                return true;
+            case '|':
+                return true;
+            case '<':
+                return true;
+            case '>':
+                return true;
+            case '=':
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    void advanceTillValid()
+    {
+        prevIndex = index;
+        prevToken = currentToken;
+        do
+        {
+            advance();
+        } while (tokenType() == INVALID);
+    }
     bool isSymbol(string token)
     {
         if (token.size() == 1)
@@ -200,19 +241,22 @@ class JackTokenizer
         return c;
     }
 
-    bool rollBack(){
+    bool rollBack()
+    {
         index = prevIndex;
+        currentToken = prevToken;
+        nextToken = "";
     }
-
-    
 
     void advance()
     {
         prevIndex = index;
+        prevToken = currentToken;
         getNextToken();
     }
 
-    void getNextToken(){
+    void getNextToken()
+    {
         currentToken = "";
         if (nextToken != "")
         {
@@ -411,12 +455,12 @@ class JackTokenizer
             return VOID;
         }
 
-        if (token == "VAR")
+        if (token == "var")
         {
             return VAR;
         }
 
-        if (token == "STATIC")
+        if (token == "static")
         {
             return STATIC;
         }
@@ -705,7 +749,7 @@ class CompilationEngine
             {
                 //class constructor function method  field static v ar int char boolean void true
                 //fakse null this let do if else while return
-                cout << tokenizer.keyWord();
+                // cout << tokenizer.keyWord();
                 int keyword = tokenizer.keyWord();
                 if (keyword == FUNCTION || keyword == CONSTRUCTOR || keyword == METHOD)
                 {
@@ -801,14 +845,16 @@ class CompilationEngine
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
             tokenizer.advance();
-            if (tokenizer.tokenType() == IDENTIFIER || tokenizer.tokenType() == SYMBOL)
+
+            if (tokenizer.tokenType() == IDENTIFIER || tokenizer.tokenType() == SYMBOL || tokenizer.tokenType() == KEYWORD)
             {
                 writer.writeLine(tokenizer.getXML());
             }
 
             if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '(')
             {
-                compileExpression();
+                // writer.writeLine(tokenizer.getXML());
+                compileExpressionList();
             }
         }
         writer.writeLine("</doStatement>");
@@ -832,10 +878,14 @@ class CompilationEngine
                 if (tokenizer.symbol() == '[' || tokenizer.symbol() == '=')
                 {
                     compileExpression();
+                    writer.writeLine(tokenizer.getXML());
+                    // tokenizer.rollBack();
                 }
             }
         }
+        
         writer.writeLine("</letStatement>");
+        
     }
 
     void compileWhile()
@@ -851,6 +901,7 @@ class CompilationEngine
                 if (tokenizer.symbol() == '(')
                 {
                     compileExpression();
+                    writer.writeLine(tokenizer.getXML());
                 }
 
                 if (tokenizer.symbol() == '{')
@@ -867,17 +918,22 @@ class CompilationEngine
     {
         writer.writeLine("<returnStatement>");
         writer.writeLine(tokenizer.getXML());
-        
+
+
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
-            tokenizer.advance();
-            if(tokenizer.tokenType()!=INVALID&&(!(tokenizer.tokenType()!=SYMBOL&&tokenizer.symbol()!=';'))){
+            tokenizer.advanceTillValid();
+            if (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
+            {
                 tokenizer.rollBack();
                 compileExpression();
             }
         }
+
         writer.writeLine(tokenizer.getXML());
         writer.writeLine("</returnStatement>");
+
+        
     }
 
     //problematic
@@ -897,6 +953,7 @@ class CompilationEngine
                     if (tokenizer.symbol() == '(')
                     {
                         compileExpression();
+                        writer.writeLine(tokenizer.getXML());
                     }
 
                     if (tokenizer.symbol() == '{')
@@ -909,8 +966,10 @@ class CompilationEngine
             //Loop
         }
 
-        else if (tokenizer.keyWord() == ELSE)
+        tokenizer.advance();
+        if (tokenizer.keyWord() == ELSE)
         {
+            writer.writeLine(tokenizer.getXML());
             while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
             {
                 tokenizer.advance();
@@ -924,11 +983,33 @@ class CompilationEngine
                 }
             }
         }
+
+        else{
+            tokenizer.rollBack();
+        }
         writer.writeLine("</ifStatement>");
     }
 
     void compileExpression()
     {
+        writer.writeLine("<expression>");
+
+        do
+        {
+
+            tokenizer.advanceTillValid();
+            compileTerm();
+            tokenizer.advanceTillValid();
+
+            if (tokenizer.tokenType() == SYMBOL && tokenizer.isOperand())
+            {
+                writer.writeLine(tokenizer.getXML());
+            }
+
+        } while (tokenizer.tokenType() == SYMBOL && tokenizer.isOperand());
+
+        writer.writeLine("</expression>");
+        // writer.writeLine(tokenizer.getXML());
 
         //Ends at ) or , or ; or ]
         //Make it exit focused
@@ -936,27 +1017,44 @@ class CompilationEngine
 
     void compileTerm()
     {
+
+        writer.writeLine("<term>");
+        // tokenizer.advanceTillValid();
+        writer.writeLine(tokenizer.getXML());
+        // if(tokeni)
+
+        writer.writeLine("</term>");
     }
 
+    //Figure out a better way for the return, and for all  other statements
     void compileExpressionList()
     {
         writer.writeLine("<expressionList>");
-        tokenizer.advance();
-        compileExpression();
 
-        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ')'))
+        do
         {
-            tokenizer.advance();
-            if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ',')
+            tokenizer.advanceTillValid();
+            if (tokenizer.tokenType() == SYMBOL)
             {
-                writer.writeLine(tokenizer.getXML());
-                compileExpression();
+                if (tokenizer.symbol() != ')')
+                {
+                    writer.writeLine(tokenizer.getXML());
+                }
             }
-        }
+
+            else
+            {
+                tokenizer.rollBack();
+                compileExpression();
+                if(tokenizer.tokenType()==SYMBOL&&tokenizer.symbol()==',')
+                {
+                    writer.writeLine(tokenizer.getXML());
+                }
+            }
+        } while (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ',');
 
         writer.writeLine("</expressionList>");
-
-        if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ')')
+        if (tokenizer.tokenType() == SYMBOL)
         {
             writer.writeLine(tokenizer.getXML());
         }
@@ -967,7 +1065,7 @@ class CompilationEngine
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
             tokenizer.advance();
-            if (tokenizer.tokenType() == KEYWORD||tokenizer.tokenType()==SYMBOL||tokenizer.tokenType()==IDENTIFIER)
+            if (tokenizer.tokenType() == KEYWORD || tokenizer.tokenType() == SYMBOL || tokenizer.tokenType() == IDENTIFIER)
             {
                 writer.writeLine(tokenizer.getXML());
             }
@@ -977,6 +1075,7 @@ class CompilationEngine
     void compileVarDec()
     {
         writer.writeLine("<varDec>");
+        writer.writeLine(tokenizer.getXML());
         // tokenizer.advance();
         if (tokenizer.tokenType() == KEYWORD && tokenizer.keyWord() == VAR)
         {
@@ -991,6 +1090,7 @@ class CompilationEngine
         string key = "";
         writer.writeLine("<subroutineDec>");
         writer.writeLine(tokenizer.getXML());
+        // cout<<"Y"<<endl;
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '{'))
         {
             tokenizer.advance();
@@ -1006,6 +1106,10 @@ class CompilationEngine
 
             if (tokenizer.tokenType() == SYMBOL)
             {
+                if (tokenizer.symbol() == '{')
+                {
+                    writer.writeLine("<subroutineBody>");
+                }
                 writer.writeLine(tokenizer.getXML());
                 if (tokenizer.symbol() == '(')
                 {
@@ -1014,9 +1118,12 @@ class CompilationEngine
             }
         }
 
+        // cout<<tokenizer.tokenType()<<endl;
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
         {
             tokenizer.advance();
+            cout<<tokenizer.keyWord()<<endl;
+            // cout<<tokenizer.keyWord()<<endl;
             if (tokenizer.tokenType() == KEYWORD)
             {
                 if (tokenizer.keyWord() == VAR)
@@ -1027,6 +1134,7 @@ class CompilationEngine
                 // vector<int> statementKeywords{LET, IF, WHILE, DO, RETURN};
                 else
                 {
+
                     compileStatements();
                 }
             }
@@ -1036,6 +1144,8 @@ class CompilationEngine
                 compileStatements();
             }
         }
+
+        writer.writeLine("</subroutineBody>");
 
         writer.writeLine("</subroutineDec>");
     }
