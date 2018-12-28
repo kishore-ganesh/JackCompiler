@@ -103,9 +103,8 @@ class FileWriter
     ofstream outstream;
 
   public:
-
-    FileWriter(){
-
+    FileWriter()
+    {
     }
     FileWriter(const char *path)
     {
@@ -126,6 +125,7 @@ class JackTokenizer
     int currentTokenType;
     int firstFree;
     int index = 0;
+    int prevIndex = 0;
 
   public:
     JackTokenizer(const char *path)
@@ -200,8 +200,19 @@ class JackTokenizer
         return c;
     }
 
+    bool rollBack(){
+        index = prevIndex;
+    }
+
+    
+
     void advance()
     {
+        prevIndex = index;
+        getNextToken();
+    }
+
+    void getNextToken(){
         currentToken = "";
         if (nextToken != "")
         {
@@ -261,7 +272,7 @@ class JackTokenizer
             {
                 if (hasMoreTokens())
                 {
-                    advance();
+                    getNextToken();
                 }
             }
         }
@@ -541,6 +552,24 @@ class JackTokenizer
         return "<keyword> " + currentToken + " </keyword>";
     }
 
+    string getXML()
+    {
+
+        switch (tokenType())
+        {
+        case KEYWORD:
+            return getKeywordXML();
+        case IDENTIFIER:
+            return getIdentifierXML();
+        case SYMBOL:
+            return getSymbolXML();
+        case STRING_CONST:
+            return getStringConstantXML();
+        case INT_CONST:
+            return getIntegerConstantXML();
+        }
+    }
+
     vector<string> tokenize(string input, char delim)
     {
         vector<string> output;
@@ -644,11 +673,13 @@ class CompilationEngine
     JackTokenizer tokenizer;
     const char *outputPath;
     FileWriter writer;
+
+  public:
     CompilationEngine(JackTokenizer tokenizer, const char *outputPath)
     {
         this->tokenizer = tokenizer;
         this->outputPath = outputPath;
-        this->writer=FileWriter(outputPath);
+        this->writer = FileWriter(outputPath);
         tokenizer.advance();
         compileClass();
     }
@@ -660,35 +691,35 @@ class CompilationEngine
         writer.writeLine("<class>");
 
         //write also the keyword dclaration here
-        writer.writeLine(tokenizer.getKeywordXML());
 
         while (tokenizer.hasMoreTokens())
         {
             tokenizer.advance();
 
-            if (tokenizer.tokenType() == IDENTIFIER)
+            if (tokenizer.tokenType() == IDENTIFIER || tokenizer.tokenType() == SYMBOL)
             {
-                writer.writeLine(tokenizer.getIdentifierXML());
+                writer.writeLine(tokenizer.getXML());
             }
 
-            if (tokenizer.tokenType() == SYMBOL)
-            {
-                writer.writeLine(tokenizer.getSymbolXML());
-            }
             if (tokenizer.tokenType() == KEYWORD)
             {
                 //class constructor function method  field static v ar int char boolean void true
                 //fakse null this let do if else while return
                 cout << tokenizer.keyWord();
                 int keyword = tokenizer.keyWord();
-                if (keyword == FUNCTION || keyword == CLASS || keyword == METHOD)
+                if (keyword == FUNCTION || keyword == CONSTRUCTOR || keyword == METHOD)
                 {
                     compileSubroutine();
                 }
 
-                if (keyword == STATIC || keyword == FIELD)
+                else if (keyword == STATIC || keyword == FIELD)
                 {
                     compileClassVarDec();
+                }
+
+                else
+                {
+                    writer.writeLine(tokenizer.getXML());
                 }
             }
         }
@@ -696,45 +727,211 @@ class CompilationEngine
         writer.writeLine("</class>");
     }
 
+    //Make this correct to excist always
+
     void compileClassVarDec()
     {
         writer.writeLine("<classVarDec>");
-        writer.writeLine(tokenizer.getIdentifierXML());
+        writer.writeLine(tokenizer.getXML());
         writeTillEndOfLine();
         writer.writeLine("</classVarDec>");
     }
 
     void compileParameterList()
     {
-        
+        writer.writeLine("<parameterList>");
+        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ')'))
+        {
+            tokenizer.advance();
+            if (tokenizer.tokenType() == KEYWORD || tokenizer.tokenType() == IDENTIFIER)
+            {
+                writer.writeLine(tokenizer.getXML());
+            }
+
+            if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() != ')')
+            {
+                writer.writeLine(tokenizer.getXML());
+            }
+        }
+        writer.writeLine("</parameterList>");
+        writer.writeLine(tokenizer.getXML());
     }
 
     void compileStatements()
     {
+
+        writer.writeLine("<statements>");
+        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
+        {
+
+            if (tokenizer.tokenType() == KEYWORD)
+            {
+                switch (tokenizer.keyWord())
+                {
+
+                //Mak this for both if and else
+                case IF:
+                    compileIf();
+                    break;
+                case WHILE:
+                    compileWhile();
+                    break;
+                case DO:
+                    compileDo();
+                    break;
+                case LET:
+                    compileLet();
+                    break;
+                case RETURN:
+                    compileReturn();
+                    break;
+                }
+            }
+
+            tokenizer.advance();
+        }
+        writer.writeLine("</statements>");
+        writer.writeLine(tokenizer.getXML());
     }
 
     void compileDo()
     {
+        writer.writeLine("<doStatement>");
+        writer.writeLine(tokenizer.getXML());
+        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
+        {
+            tokenizer.advance();
+            if (tokenizer.tokenType() == IDENTIFIER || tokenizer.tokenType() == SYMBOL)
+            {
+                writer.writeLine(tokenizer.getXML());
+            }
+
+            if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '(')
+            {
+                compileExpression();
+            }
+        }
+        writer.writeLine("</doStatement>");
     }
 
     void compileLet()
     {
+        writer.writeLine("<letStatement>");
+        writer.writeLine(tokenizer.getXML());
+        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
+        {
+
+            tokenizer.advance();
+            if (tokenizer.tokenType() == SYMBOL || tokenizer.tokenType() == IDENTIFIER)
+            {
+                writer.writeLine(tokenizer.getXML());
+            }
+
+            if (tokenizer.tokenType() == SYMBOL)
+            {
+                if (tokenizer.symbol() == '[' || tokenizer.symbol() == '=')
+                {
+                    compileExpression();
+                }
+            }
+        }
+        writer.writeLine("</letStatement>");
     }
 
     void compileWhile()
     {
+        writer.writeLine("<whileStatement>");
+        writer.writeLine(tokenizer.getXML());
+        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
+        {
+            tokenizer.advance();
+            if (tokenizer.tokenType() == SYMBOL)
+            {
+                writer.writeLine(tokenizer.getXML()); //make this ebtter
+                if (tokenizer.symbol() == '(')
+                {
+                    compileExpression();
+                }
+
+                if (tokenizer.symbol() == '{')
+                {
+                    compileStatements();
+                }
+            }
+        }
+        writer.writeLine("</whileStatement>");
     }
 
+    //Make get XML better wiht an interface
     void compileReturn()
     {
+        writer.writeLine("<returnStatement>");
+        writer.writeLine(tokenizer.getXML());
+        
+        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
+        {
+            tokenizer.advance();
+            if(tokenizer.tokenType()!=INVALID&&(!(tokenizer.tokenType()!=SYMBOL&&tokenizer.symbol()!=';'))){
+                tokenizer.rollBack();
+                compileExpression();
+            }
+        }
+        writer.writeLine(tokenizer.getXML());
+        writer.writeLine("</returnStatement>");
     }
+
+    //problematic
 
     void compileIf()
     {
+        writer.writeLine("<ifStatement>");
+        writer.writeLine(tokenizer.getXML());
+        if (tokenizer.keyWord() == IF)
+        {
+            while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
+            {
+                tokenizer.advance();
+                if (tokenizer.tokenType() == SYMBOL)
+                {
+                    writer.writeLine(tokenizer.getXML());
+                    if (tokenizer.symbol() == '(')
+                    {
+                        compileExpression();
+                    }
+
+                    if (tokenizer.symbol() == '{')
+                    {
+                        // tokenizer.advance();
+                        compileStatements();
+                    }
+                }
+            }
+            //Loop
+        }
+
+        else if (tokenizer.keyWord() == ELSE)
+        {
+            while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
+            {
+                tokenizer.advance();
+                if (tokenizer.tokenType() == SYMBOL)
+                {
+                    writer.writeLine(tokenizer.getXML());
+                    if (tokenizer.symbol() == '{')
+                    {
+                        compileStatements();
+                    }
+                }
+            }
+        }
+        writer.writeLine("</ifStatement>");
     }
 
     void compileExpression()
     {
+
+        //Ends at ) or , or ; or ]
+        //Make it exit focused
     }
 
     void compileTerm()
@@ -743,33 +940,44 @@ class CompilationEngine
 
     void compileExpressionList()
     {
+        writer.writeLine("<expressionList>");
+        tokenizer.advance();
+        compileExpression();
+
+        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ')'))
+        {
+            tokenizer.advance();
+            if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ',')
+            {
+                writer.writeLine(tokenizer.getXML());
+                compileExpression();
+            }
+        }
+
+        writer.writeLine("</expressionList>");
+
+        if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ')')
+        {
+            writer.writeLine(tokenizer.getXML());
+        }
     }
 
-    void writeTillEndOfLine(){
+    void writeTillEndOfLine()
+    {
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
+        {
+            tokenizer.advance();
+            if (tokenizer.tokenType() == KEYWORD||tokenizer.tokenType()==SYMBOL||tokenizer.tokenType()==IDENTIFIER)
             {
-                tokenizer.advance();
-                if (tokenizer.tokenType() == KEYWORD)
-                {
-                    writer.writeLine(tokenizer.getKeywordXML());
-                }
-
-                if (tokenizer.tokenType() == IDENTIFIER)
-                {
-                    writer.writeLine(tokenizer.getIdentifierXML());
-                }
-
-                if (tokenizer.tokenType() == SYMBOL)
-                {
-                    writer.writeLine(tokenizer.getSymbolXML());
-                }
+                writer.writeLine(tokenizer.getXML());
             }
+        }
     }
 
     void compileVarDec()
     {
         writer.writeLine("<varDec>");
-        tokenizer.advance();
+        // tokenizer.advance();
         if (tokenizer.tokenType() == KEYWORD && tokenizer.keyWord() == VAR)
         {
             writeTillEndOfLine();
@@ -782,33 +990,50 @@ class CompilationEngine
         //write function liune
         string key = "";
         writer.writeLine("<subroutineDec>");
-        writer.writeLine(tokenizer.getKeywordXML());
+        writer.writeLine(tokenizer.getXML());
+        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '{'))
+        {
+            tokenizer.advance();
+            if (tokenizer.tokenType() == KEYWORD)
+            {
+                writer.writeLine(tokenizer.getXML());
+            }
+
+            if (tokenizer.tokenType() == IDENTIFIER)
+            {
+                writer.writeLine(tokenizer.getXML());
+            }
+
+            if (tokenizer.tokenType() == SYMBOL)
+            {
+                writer.writeLine(tokenizer.getXML());
+                if (tokenizer.symbol() == '(')
+                {
+                    compileParameterList();
+                }
+            }
+        }
+
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
         {
             tokenizer.advance();
             if (tokenizer.tokenType() == KEYWORD)
             {
-                writer.writeLine(tokenizer.getKeywordXML());
-            }
-
-            if (tokenizer.tokenType() == IDENTIFIER)
-            {
-                writer.writeLine(tokenizer.getIdentifierXML());
-            }
-
-            if (tokenizer.tokenType() == SYMBOL)
-            {
-                writer.writeLine(tokenizer.getSymbolXML());
-                if (tokenizer.symbol() == '(')
-                {
-                    compileParameterList();
-                }
-
-                if (tokenizer.symbol() == '{')
+                if (tokenizer.keyWord() == VAR)
                 {
                     compileVarDec();
+                }
+
+                // vector<int> statementKeywords{LET, IF, WHILE, DO, RETURN};
+                else
+                {
                     compileStatements();
                 }
+            }
+
+            else if (tokenizer.tokenType() != INVALID)
+            {
+                compileStatements();
             }
         }
 
@@ -836,8 +1061,10 @@ class JackAnalyzer
 
         JackTokenizer tokenizer(filepath);
         string outputPath = filepath;
-        outputPath = outputPath.substr(0, outputPath.size() - 4) + "T.xml";
-        tokenizer.test(outputPath.c_str());
+        outputPath = outputPath.substr(0, outputPath.size() - 4) + "TT.xml";
+        CompilationEngine engine(tokenizer, outputPath.c_str());
+
+        // tokenizer.test(outputPath.c_str());
     }
 };
 
