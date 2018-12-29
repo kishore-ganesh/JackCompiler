@@ -41,6 +41,12 @@ namespace fs = std::experimental::filesystem;
 
 using namespace std;
 
+struct symbolInformation{
+    string type;
+    int kind;
+    int number;
+};
+
 string trim(string input)
 {
     int l = 0;
@@ -624,30 +630,6 @@ class JackTokenizer
         }
     }
 
-    vector<string> tokenize(string input, char delim)
-    {
-        vector<string> output;
-        int k = 0;
-        for (int i = 0; i < input.size(); i++)
-        {
-            if (input[i] == delim)
-            {
-                string token = input.substr(k, i - k);
-                if (token.find(delim) == -1)
-                {
-                    output.push_back(token);
-                }
-                k = i + 1;
-            }
-        }
-
-        if (k < input.size())
-        {
-            output.push_back(input.substr(k));
-        }
-
-        return output;
-    }
 
     void test(const char *path)
     {
@@ -1217,6 +1199,41 @@ class CompilationEngine
     }
 };
 
+class SymbolTable{
+
+    map<string, symbolInformation> classScope;
+    map<string, symbolInformation> subroutineScope;
+
+
+    void startSubroutine(){
+        subroutineScope.erase(subroutineScope.begin(), subroutineScope.end());
+
+    }
+
+    void define(string name, string type, int kind)
+    {
+
+    }
+
+    int varCount(int kind)
+    {
+
+    }
+
+    string typeOf(string name)
+    {
+
+    }
+
+    string indexOf(string name)
+    {
+
+    }
+
+
+
+
+};
 /*For each construct, we have a particular way of wiritng it
 For instance, a function consists of the function keyword
 */
