@@ -34,6 +34,8 @@
 #define NULL 25
 #define THIS 26
 #define INVALID 27
+#define ARG 28
+#define NONE 29
 
 //While not invalid keep advancing
 
@@ -41,10 +43,11 @@ namespace fs = std::experimental::filesystem;
 
 using namespace std;
 
-struct symbolInformation{
+struct symbolInformation
+{
     string type;
     int kind;
-    int number;
+    int index;
 };
 
 string trim(string input)
@@ -96,7 +99,7 @@ string removeComments(string input)
     }
 
     // cout<<input<<endl;
-    cout<<output<<endl;
+    // cout << output << endl;
 
     output += input[input.size() - 1];
 
@@ -120,6 +123,11 @@ class FileWriter
     {
         outstream << line;
         outstream << "\n";
+    }
+
+    void close()
+    {
+        outstream.close();
     }
 };
 
@@ -212,22 +220,23 @@ class JackTokenizer
 
     void advanceTillValid()
     {
-        if(nextToken==""){
+        if (nextToken == "")
+        {
             prevIndex = index;
-        
         }
-        else{
-            prevIndex = index-1;
+        else
+        {
+            prevIndex = index - 1;
         }
 
-    prevToken = currentToken;        
-        cout<<prevIndex<<" ";
+        prevToken = currentToken;
+        // cout << prevIndex << " ";
         do
         {
             advance();
-        } while (hasMoreTokens()&&tokenType() == INVALID);
+        } while (hasMoreTokens() && tokenType() == INVALID);
 
-        cout<<index<<endl;
+        // cout << index << endl;
     }
     bool isSymbol(string token)
     {
@@ -558,6 +567,11 @@ class JackTokenizer
         return value;
     }
 
+    string getStringKeyword()
+    {
+        return currentToken;
+    }
+
     string getIdentifierXML()
     {
 
@@ -630,11 +644,10 @@ class JackTokenizer
         }
     }
 
-
     void test(const char *path)
     {
         FileWriter writer(path);
-        writer.writeLine("<tokens>");
+        //writer.writeLine("<tokens>");
         while (hasMoreTokens())
         {
             advanceTillValid();
@@ -670,37 +683,260 @@ class JackTokenizer
                     toWrite = currentToken;
                 }
 
-                writer.writeLine("<symbol> " + toWrite + " </symbol>");
+                //writer.writeLine("<symbol> " + toWrite + " </symbol>");
                 break;
             }
 
             case KEYWORD:
             {
-                writer.writeLine("<keyword> " + currentToken + " </keyword>");
+                //writer.writeLine("<keyword> " + currentToken + " </keyword>");
                 break;
             }
 
             case IDENTIFIER:
             {
-                writer.writeLine("<identifier> " + currentToken + " </identifier>");
+                //writer.writeLine("<identifier> " + currentToken + " </identifier>");
                 break;
             }
 
             case STRING_CONST:
             {
                 string toWrite = stringVal();
-                writer.writeLine("<stringConstant> " + toWrite + " </stringConstant>");
+                //writer.writeLine("<stringConstant> " + toWrite + " </stringConstant>");
                 break;
             }
 
             case INT_CONST:
             {
-                writer.writeLine("<integerConstant> " + currentToken + " </integerConstant>");
+                //writer.writeLine("<integerConstant> " + currentToken + " </integerConstant>");
                 break;
             }
             }
         }
-        writer.writeLine("</tokens>");
+        //writer.writeLine("</tokens>");
+    }
+};
+
+class SymbolTable
+{
+
+    map<string, symbolInformation> classScope;
+    map<string, symbolInformation> subroutineScope;
+    map<int, int> count;
+    // map<string, int> functionTypes;
+
+  public:
+    SymbolTable()
+    {
+        count[STATIC] = 0;
+        count[FIELD] = 0;
+    }
+
+    void startSubroutine(int keyword)
+    {
+        subroutineScope.erase(subroutineScope.begin(), subroutineScope.end());
+        count[VAR] = 0;
+        if (keyword == CONSTRUCTOR || keyword == FUNCTION)
+        {
+            count[ARG] = 0;
+        }
+        else
+        {
+            count[ARG] = 1;
+        }
+
+        //count should be zero if it is a consturcto
+    }
+
+    //Fix current socpe
+    void define(string name, string type, int kind)
+    {
+        symbolInformation info;
+        info.type = type;
+        info.kind = kind;
+        info.index = count[kind];
+        count[kind]++; //check this
+
+        cout << name << " " << type << " " << kind << " " << count[kind] << endl;
+        if (kind == STATIC || kind == FIELD)
+        {
+            classScope[name] = info;
+        }
+
+        else if (kind == ARG || kind == VAR)
+        {
+            subroutineScope[name] = info;
+        }
+    }
+
+    int varCount(int kind)
+    {
+        return count[kind];
+    }
+
+    int kindOf(string name)
+    {
+        if (subroutineScope.find(name) != subroutineScope.end())
+        {
+            return subroutineScope[name].kind;
+        }
+
+        else if (classScope.find(name) != classScope.end())
+        {
+            return classScope[name].kind;
+        }
+
+        return NONE;
+    }
+
+    //TODO not cortrect
+    string getSegment(string name)
+    {
+        int kind = kindOf(name);
+        switch (kind)
+        {
+        case ARG:
+            return "argument";
+        case VAR:
+            return "local";
+        case STATIC:
+            return "static";
+        case FIELD:
+            return "this";
+        }
+    }
+
+    string typeOf(string name)
+    {
+        //Does this mean it won't wokr when in class normally
+        if (subroutineScope.find(name) != subroutineScope.end())
+        {
+            return subroutineScope[name].type;
+        }
+
+        else
+        {
+            return classScope[name].type;
+        }
+    }
+
+    int indexOf(string name)
+    {
+        if (subroutineScope.find(name) != subroutineScope.end())
+        {
+            return subroutineScope[name].index;
+        }
+
+        else
+        {
+            return classScope[name].index;
+        }
+    }
+};
+
+//Differentiate between function, constructor and method
+
+class VMWriter
+{
+    FileWriter writer;
+    string currentClassName = "";
+    //Class name appended to function calls
+
+  public:
+    VMWriter()
+    {
+    }
+    VMWriter(const char *path)
+    {
+        this->writer = FileWriter(path);
+        fs::path p = path;
+        currentClassName = p.stem();
+    }
+
+    void writePush(string segment, string index)
+    {
+        writer.writeLine("push " + segment + " " + index);
+    }
+
+    void writePop(string segment, string index)
+    {
+        writer.writeLine("pop " + segment + " " + index);
+    }
+
+    void writeFunction(string name, string numberOfLocals)
+    {
+        //Constructor? - TODO
+
+        writer.writeLine("function " + currentClassName + "." + name + " " + numberOfLocals);
+    }
+
+    void writeArithmetic(char op)
+    {
+        string operand = "";
+
+        //Do we need - operator
+        switch (op)
+        {
+        case '+':
+            operand = "add";
+            break;
+        case '-':
+            operand = "sub";
+            break;
+        case '/':
+            operand = "call Math.divide 2";
+            break;
+        case '*':
+            operand = "call Math.multiply 2";
+            break;
+        case '~':
+            operand = "not";
+            break;
+        case 'U':
+            operand = "neg";
+            break;
+
+        case '<': operand = "lt"; break; 
+        case '>': operand ="gt";break; 
+        case '=': operand ="eq";break; 
+        case '&': operand="and"; break;
+        case '|': operand="or"; break;
+        }
+        writer.writeLine(operand);
+    }
+
+    void writeLabel(string label)
+    {
+        writer.writeLine("label " + label);
+    }
+
+    void writeGoto(string label)
+    {
+        writer.writeLine("goto " + label);
+    }
+
+    void writeIf(string label)
+    {
+        writer.writeLine("if-goto " + label);
+    }
+
+    void writeCall(string functionName, string args)
+    {
+        if (functionName.find(".") == -1)
+        {
+            functionName = currentClassName + "." + functionName;
+        }
+        writer.writeLine("call " + functionName + " " + args);
+    }
+
+    void writeReturn()
+    {
+        writer.writeLine("return");
+    }
+
+    void closeFile()
+    {
+        writer.close();
     }
 };
 
@@ -709,13 +945,19 @@ class CompilationEngine
     JackTokenizer tokenizer;
     const char *outputPath;
     FileWriter writer;
+    VMWriter writerVM;
+    SymbolTable table;
+    int labelCount = 0;
 
   public:
     CompilationEngine(JackTokenizer tokenizer, const char *outputPath)
     {
         this->tokenizer = tokenizer;
         this->outputPath = outputPath;
-        this->writer = FileWriter(outputPath);
+        // this->writer = FileWriter(outputPath);
+        this->table = SymbolTable();
+        this->writerVM = VMWriter(outputPath);
+        //Make this right
         tokenizer.advanceTillValid();
         compileClass();
     }
@@ -724,7 +966,7 @@ class CompilationEngine
 
     void compileClass()
     {
-        writer.writeLine("<class>");
+        //writer.writeLine("<class>");
 
         //write also the keyword dclaration here
 
@@ -734,7 +976,7 @@ class CompilationEngine
 
             if (tokenizer.tokenType() == IDENTIFIER || tokenizer.tokenType() == SYMBOL)
             {
-                writer.writeLine(tokenizer.getXML());
+                //writer.writeLine(tokenizer.getXML());
             }
 
             if (tokenizer.tokenType() == KEYWORD)
@@ -755,48 +997,110 @@ class CompilationEngine
 
                 else
                 {
-                    writer.writeLine(tokenizer.getXML());
+                    //writer.writeLine(tokenizer.getXML());
                 }
             }
         }
 
-        writer.writeLine("</class>");
+        //writer.writeLine("</class>");
     }
 
     //Make this correct to excist always
 
     void compileClassVarDec()
     {
-        writer.writeLine("<classVarDec>");
-        writer.writeLine(tokenizer.getXML());
-        writeTillEndOfLine();
-        writer.writeLine("</classVarDec>");
+        //writer.writeLine("<classVarDec>");
+        int kind = tokenizer.keyWord();
+        tokenizer.advanceTillValid();
+
+        string type = tokenizer.tokenType() == KEYWORD ? tokenizer.getStringKeyword() : tokenizer.identifier();
+        tokenizer.advanceTillValid();
+        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
+        {
+            //writer.writeLine(tokenizer.getXML());
+            if (tokenizer.tokenType() == IDENTIFIER)
+            {
+                string name = tokenizer.identifier();
+                table.define(name, type, kind);
+            }
+
+            tokenizer.advanceTillValid();
+        }
+
+        //writer.writeLine("</classVarDec>");
+    }
+
+    void compileVarDec()
+    {
+        //writer.writeLine("<varDec>");
+        //writer.writeLine(tokenizer.getXML());
+
+        // tokenizer.advance();
+
+        if (tokenizer.tokenType() == KEYWORD && tokenizer.keyWord() == VAR)
+        {
+
+            int kind = VAR;
+            tokenizer.advanceTillValid();
+            string type = tokenizer.tokenType() == KEYWORD ? tokenizer.getStringKeyword() : tokenizer.identifier();
+            tokenizer.advanceTillValid();
+            int numberOfVars = 1;
+            while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
+            {
+                //writer.writeLine(tokenizer.getXML());
+                if (tokenizer.tokenType() == IDENTIFIER)
+                {
+                    string name = tokenizer.identifier();
+
+                    table.define(name, type, kind);
+                }
+
+                tokenizer.advanceTillValid();
+            }
+        }
+        //writer.writeLine("</varDec>");
     }
 
     void compileParameterList()
     {
-        writer.writeLine("<parameterList>");
+        //writer.writeLine("<parameterList>");
+
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ')'))
         {
             tokenizer.advanceTillValid();
-            if (tokenizer.tokenType() == KEYWORD || tokenizer.tokenType() == IDENTIFIER)
+            string type = "";
+            string name = "";
+            int kind = ARG;
+            if (tokenizer.tokenType() == KEYWORD)
             {
-                writer.writeLine(tokenizer.getXML());
+                type = tokenizer.getStringKeyword();
+            }
+
+            else if (tokenizer.tokenType() == IDENTIFIER)
+            {
+                type = tokenizer.identifier();
+            }
+
+            if (tokenizer.tokenType() == IDENTIFIER || tokenizer.tokenType() == KEYWORD)
+            {
+                tokenizer.advanceTillValid();
+                name = tokenizer.identifier();
+                table.define(name, type, kind);
             }
 
             if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() != ')')
             {
-                writer.writeLine(tokenizer.getXML());
+                //writer.writeLine(tokenizer.getXML());
             }
         }
-        writer.writeLine("</parameterList>");
-        writer.writeLine(tokenizer.getXML());
+        //writer.writeLine("</parameterList>");
+        //writer.writeLine(tokenizer.getXML());
     }
 
     void compileStatements()
     {
 
-        writer.writeLine("<statements>");
+        //writer.writeLine("<statements>");
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
         {
 
@@ -826,89 +1130,137 @@ class CompilationEngine
 
             tokenizer.advanceTillValid();
         }
-        writer.writeLine("</statements>");
-        writer.writeLine(tokenizer.getXML());
+        //writer.writeLine("</statements>");
+        //writer.writeLine(tokenizer.getXML());
     }
 
     void compileDo()
     {
-        writer.writeLine("<doStatement>");
-        writer.writeLine(tokenizer.getXML());
+        //writer.writeLine("<doStatement>");
+        //writer.writeLine(tokenizer.getXML());
+        string functionName = "";
+        string identifier = "";
+        int numberOfArguments = 0;
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
             tokenizer.advanceTillValid();
 
-            if (tokenizer.tokenType() == IDENTIFIER || tokenizer.tokenType() == SYMBOL || tokenizer.tokenType() == KEYWORD)
+            if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '.')
             {
-                writer.writeLine(tokenizer.getXML());
+                identifier = functionName;
+                functionName = functionName + ".";
+            }
+            if (tokenizer.tokenType() == IDENTIFIER)
+            {
+                functionName += tokenizer.identifier();
             }
 
             if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '(')
             {
-                // writer.writeLine(tokenizer.getXML());
-                compileExpressionList();
+                // //writer.writeLine(tokenizer.getXML());
+
+                if (identifier.find(".") == -1)
+                {
+                    numberOfArguments++;
+                    writerVM.writePush("pointer", "0");
+                }
+
+                else if (table.kindOf(identifier) != NONE)
+                {
+                    numberOfArguments++;
+                    writerVM.writePush(table.getSegment(identifier), to_string(table.indexOf(identifier)));
+                }
+                numberOfArguments += compileExpressionList();
             }
         }
-        writer.writeLine("</doStatement>");
+
+        writerVM.writeCall(functionName, to_string(numberOfArguments));
+        //writer.writeLine("</doStatement>");
     }
 
     void compileLet()
     {
-        writer.writeLine("<letStatement>");
-        writer.writeLine(tokenizer.getXML());
+        //writer.writeLine("<letStatement>");
+        //writer.writeLine(tokenizer.getXML());
+        tokenizer.advanceTillValid();
+        string identifierName = tokenizer.identifier();
+        string segment = table.getSegment(identifierName);
+        string index = to_string(table.indexOf(identifierName));
+        int kind = table.kindOf(identifierName);
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
 
             tokenizer.advanceTillValid();
             if (tokenizer.tokenType() == SYMBOL || tokenizer.tokenType() == IDENTIFIER)
             {
-                writer.writeLine(tokenizer.getXML());
+                //writer.writeLine(tokenizer.getXML());
             }
 
             if (tokenizer.tokenType() == SYMBOL)
             {
-                if (tokenizer.symbol() == '[' || tokenizer.symbol() == '=')
+                if (tokenizer.symbol() == '[')
                 {
                     compileExpression();
-                    writer.writeLine(tokenizer.getXML());
-                    // tokenizer.rollBack();
+                    writerVM.writePush(segment, index);
+                    writerVM.writeArithmetic('+');
+                    writerVM.writePop("pointer", "1");
+                    segment = "that";
+                    index = "0";
                 }
+                else if (tokenizer.symbol() == '=')
+                {
+                    compileExpression();
+                    writerVM.writePop(segment, index);
+                }
+                //Here write the array part
+
+                //Process address, and then pop there
+                // //writer.writeLine(tokenizer.getXML());
+                // tokenizer.rollBack();
             }
         }
 
-        writer.writeLine("</letStatement>");
+        //writer.writeLine("</letStatement>");
     }
 
     void compileWhile()
     {
-        writer.writeLine("<whileStatement>");
-        writer.writeLine(tokenizer.getXML());
+        //writer.writeLine("<whileStatement>");
+        //writer.writeLine(tokenizer.getXML());
+        writerVM.writeLabel("while" + to_string(labelCount));
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
         {
             tokenizer.advanceTillValid();
             if (tokenizer.tokenType() == SYMBOL)
             {
-                writer.writeLine(tokenizer.getXML()); //make this ebtter
+                //writer.writeLine(tokenizer.getXML()); //make this ebtter
                 if (tokenizer.symbol() == '(')
                 {
                     compileExpression();
-                    writer.writeLine(tokenizer.getXML());
+                    writerVM.writeArithmetic('~');
+                    writerVM.writeIf("endwhile" + to_string(labelCount));
+                    // writerVM.writeLine(tokenizer.getXML());
                 }
 
                 if (tokenizer.symbol() == '{')
                 {
                     compileStatements();
+                    writerVM.writeGoto("while" + to_string(labelCount));
                 }
             }
         }
-        writer.writeLine("</whileStatement>");
-    }
 
+        writerVM.writeLabel("endwhile" + to_string(labelCount));
+
+        labelCount++;
+        //writer.writeLine("</whileStatement>");
+    }
+    //TODO Make return void correct
     //Make get XML better wiht an interface
     void compileReturn()
     {
-        writer.writeLine("<returnStatement>");
-        writer.writeLine(tokenizer.getXML());
+        //writer.writeLine("<returnStatement>");
+        //writer.writeLine(tokenizer.getXML());
 
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
@@ -920,132 +1272,180 @@ class CompilationEngine
             }
         }
 
-        writer.writeLine(tokenizer.getXML());
-        writer.writeLine("</returnStatement>");
+        writerVM.writeReturn();
+
+        //writer.writeLine(tokenizer.getXML());
+        //writer.writeLine("</returnStatement>");
     }
 
     //problematic
+    //Check how member variables are mapped to this
 
     void compileIf()
     {
-        writer.writeLine("<ifStatement>");
-        writer.writeLine(tokenizer.getXML());
+        //writer.writeLine("<ifStatement>");
+        //writer.writeLine(tokenizer.getXML());
         if (tokenizer.keyWord() == IF)
         {
+
             while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
             {
                 tokenizer.advanceTillValid();
                 if (tokenizer.tokenType() == SYMBOL)
                 {
-                    writer.writeLine(tokenizer.getXML());
+                    //writer.writeLine(tokenizer.getXML());
                     if (tokenizer.symbol() == '(')
                     {
                         compileExpression();
-                        writer.writeLine(tokenizer.getXML());
+                        writerVM.writeArithmetic('~');
+                        writerVM.writeIf("noiflabel" + to_string(labelCount));
+                        //writer.writeLine(tokenizer.getXML());
                     }
 
                     if (tokenizer.symbol() == '{')
                     {
                         // tokenizer.advance();
+
                         compileStatements();
+                        writerVM.writeGoto("endif" + to_string(labelCount));
                     }
                 }
             }
             //Loop
         }
 
+        writerVM.writeLabel("noiflabel" + to_string(labelCount));
+
         tokenizer.advanceTillValid();
         if (tokenizer.keyWord() == ELSE)
         {
-            writer.writeLine(tokenizer.getXML());
+            //writer.writeLine(tokenizer.getXML());
             while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
             {
                 tokenizer.advanceTillValid();
                 if (tokenizer.tokenType() == SYMBOL)
                 {
-                    writer.writeLine(tokenizer.getXML());
+                    //writer.writeLine(tokenizer.getXML());
                     if (tokenizer.symbol() == '{')
                     {
                         compileStatements();
                     }
                 }
             }
+
+            writerVM.writeGoto("endif" + to_string(labelCount));
         }
 
         else
         {
             tokenizer.rollBack();
         }
-        writer.writeLine("</ifStatement>");
+
+        writerVM.writeLabel("endif" + to_string(labelCount));
+
+        labelCount++;
+        //writer.writeLine("</ifStatement>");
     }
 
+    //Make bounds  correct
+    //Do we have to push the arghument
     void compileExpression()
     {
-        writer.writeLine("<expression>");
+        //writer.writeLine("<expression>");
+        tokenizer.advanceTillValid();
+        compileTerm();
+        tokenizer.advanceTillValid();
 
-        do
+        while (tokenizer.tokenType() == SYMBOL && tokenizer.isOperand())
+
         {
-
+            char operand = tokenizer.symbol();
             tokenizer.advanceTillValid();
             compileTerm();
+            writerVM.writeArithmetic(operand);
             tokenizer.advanceTillValid();
+        }
 
-            if (tokenizer.tokenType() == SYMBOL && tokenizer.isOperand())
-            {
-                writer.writeLine(tokenizer.getXML());
-            }
-
-        } while (tokenizer.tokenType() == SYMBOL && tokenizer.isOperand());
-
-        writer.writeLine("</expression>");
-        // writer.writeLine(tokenizer.getXML());
+        //writer.writeLine("</expression>");
+        // //writer.writeLine(tokenizer.getXML());
 
         //Ends at ) or , or ; or ]
         //Make it exit focused
     }
-
+    //TODO String
     void compileTerm()
     {
 
-        writer.writeLine("<term>");
+        //writer.writeLine("<term>");
         // tokenizer.advanceTillValid();
 
-        writer.writeLine(tokenizer.getXML());
+        //writer.writeLine(tokenizer.getXML());
+        string currentObject = "";
         if (tokenizer.tokenType() == IDENTIFIER)
         {
+            currentObject = tokenizer.identifier();
+            //If just normal, then push it
             tokenizer.advanceTillValid();
 
-            if (tokenizer.tokenType()==SYMBOL)
+            if (tokenizer.tokenType() == SYMBOL)
             {
                 switch (tokenizer.symbol())
                 {
                 case '.':
                 {
-                    writer.writeLine(tokenizer.getXML());
+                    //writer.writeLine(tokenizer.getXML());
                     tokenizer.advanceTillValid();
-                    writer.writeLine(tokenizer.getXML());
+                    string toCall = currentObject + '.' + tokenizer.identifier();
+                    //writer.writeLine(tokenizer.getXML());
                     tokenizer.advanceTillValid();
-                    writer.writeLine(tokenizer.getXML());
-                    compileExpressionList();
+                    //writer.writeLine(tokenizer.getXML());
+                    if (table.kindOf(currentObject) != NONE)
+                    {
+                        writerVM.writePush(table.getSegment(currentObject), to_string(table.indexOf(currentObject)));
+                    }
+                    int numberOfArguments = compileExpressionList();
+                    //push this too
+                    //Also have to modify htis for consturctors
+                    writerVM.writeCall(toCall, to_string(numberOfArguments));
                     break;
                 }
                 case '(':
                 {
-                    writer.writeLine(tokenizer.getXML());
-                    compileExpressionList();
+                    //writer.writeLine(tokenizer.getXML());
+                    int numberOfArguments = 1;
+                    writerVM.writePush("pointer", "0");
+                    numberOfArguments += compileExpressionList();
+                    writerVM.writeCall(currentObject, to_string(numberOfArguments));
                     break;
                 }
                 case '[':
                 {
-                    writer.writeLine(tokenizer.getXML());
+                    //writer.writeLine(tokenizer.getXML());
                     compileExpression();
-                    writer.writeLine(tokenizer.getXML());
+                    /*
+                    Push the array identifier
+                    add
+                    pop to pointer that
+                    push that 0 
+                    */
+
+                    int index = table.indexOf(currentObject);
+                    string segment = table.getSegment(currentObject);
+                    writerVM.writePush(segment, to_string(index));
+                    writerVM.writeArithmetic('+');
+                    writerVM.writePop("pointer", "1");
+                    writerVM.writePush("that", "0");
+                    //write  for  array
+                    // //writer.writeLine(tokenizer.getXML());
                     break;
                 }
 
                 default:
                 {
                     tokenizer.rollBack();
+                    int index = table.indexOf(currentObject);
+                    string segment = table.getSegment(currentObject);
+                    writerVM.writePush(segment, to_string(index));
                 }
                 }
             }
@@ -1053,112 +1453,152 @@ class CompilationEngine
             else
             {
                 tokenizer.rollBack();
+                int index = table.indexOf(currentObject);
+                string segment = table.getSegment(currentObject);
+                writerVM.writePush(segment, to_string(index));
             }
         }
 
         else if (tokenizer.tokenType() == SYMBOL && (tokenizer.symbol() == '-' || tokenizer.symbol() == '~'))
         {
+            char symbol = tokenizer.symbol() == '~' ? '~' : 'U';
             tokenizer.advanceTillValid();
             compileTerm();
+
+            writerVM.writeArithmetic(symbol);
         }
 
-        else if(tokenizer.tokenType()==SYMBOL&&tokenizer.symbol()=='('){
+        else if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '(')
+        {
             compileExpression();
-            writer.writeLine(tokenizer.getXML());
+            //writer.writeLine(tokenizer.getXML());
+        }
+
+        else if (tokenizer.tokenType() == STRING_CONST)
+        {
+            string value = tokenizer.stringVal();
+            writerVM.writePush("constant", to_string(value.size()));
+            writerVM.writeCall("String.new", "1");
+            for(int i=0; i<value.size(); i++)
+            {
+                int c = value[i];
+                // writerVM.
+                //handle identifier 
+            }
+        }
+
+        else if (tokenizer.tokenType() == INT_CONST)
+        {
+            writerVM.writePush("constant", to_string(tokenizer.intVal()));
+        }
+
+        else if (tokenizer.tokenType() == KEYWORD)
+        {
+            string keyword = tokenizer.getStringKeyword();
+            if (keyword == "true" || keyword == "false" || keyword == "null" || keyword == "this")
+            {
+                switch (tokenizer.keyWord())
+                {
+                case TRUE:
+                {
+                    writerVM.writePush("constant", "1");
+                    writerVM.writeArithmetic('U');
+                    break;
+                }
+
+                case FALSE:
+                {
+                    writerVM.writePush("constant", "0");
+                    break;
+                }
+
+                case THIS:
+                {
+                    writerVM.writePush("pointer", "0");
+                    break;
+                }
+                case NULL:
+                {
+                    writerVM.writePush("constant", "0");
+                    break;
+                }
+                }
+            }
         }
 
         // if()
         // if(tokeni)
 
-        writer.writeLine("</term>");
+        //writer.writeLine("</term>");
     }
 
     //Figure out a better way for the return, and for all  other statements
-    void compileExpressionList()
+    int compileExpressionList()
     {
-        writer.writeLine("<expressionList>");
-
+        //writer.writeLine("<expressionList>");
+        int numberOfArguments = 0;
         do
         {
             tokenizer.advanceTillValid();
-             if(tokenizer.tokenType()!=SYMBOL||tokenizer.symbol()=='(')
+            if (tokenizer.tokenType() != SYMBOL || tokenizer.symbol() == '(')
             {
                 tokenizer.rollBack();
                 compileExpression();
-                if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ',')
-                {
-                    writer.writeLine(tokenizer.getXML());
-                }
+                numberOfArguments++;
             }
             else if (tokenizer.tokenType() == SYMBOL)
             {
-                if (tokenizer.symbol() != ')')
+                if (tokenizer.symbol() != '(')
                 {
-                    writer.writeLine(tokenizer.getXML());
+                    compileExpression();
                 }
             }
 
-           
         } while (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ',');
 
-        writer.writeLine("</expressionList>");
+        //writer.writeLine("</expressionList>");
         if (tokenizer.tokenType() == SYMBOL)
         {
-            writer.writeLine(tokenizer.getXML());
+            //writer.writeLine(tokenizer.getXML());
         }
-    }
 
-    void writeTillEndOfLine()
-    {
-        while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
-        {
-            tokenizer.advanceTillValid();
-            if (tokenizer.tokenType() == KEYWORD || tokenizer.tokenType() == SYMBOL || tokenizer.tokenType() == IDENTIFIER)
-            {
-                writer.writeLine(tokenizer.getXML());
-            }
-        }
-    }
-
-    void compileVarDec()
-    {
-        writer.writeLine("<varDec>");
-        writer.writeLine(tokenizer.getXML());
-        // tokenizer.advance();
-        if (tokenizer.tokenType() == KEYWORD && tokenizer.keyWord() == VAR)
-        {
-            writeTillEndOfLine();
-        }
-        writer.writeLine("</varDec>");
+        return numberOfArguments;
     }
 
     void compileSubroutine()
     {
         //write function liune
-        string key = "";
-        writer.writeLine("<subroutineDec>");
-        writer.writeLine(tokenizer.getXML());
+        // string key = "";
+        int keyword = tokenizer.keyWord();
+        //writer.writeLine("<subroutineDec>");
+        //writer.writeLine(tokenizer.getXML());
+        int numberOfLocals = 0;
+
+        string functionName = "";
+
+        table.startSubroutine(keyword);
         // cout<<"Y"<<endl;
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '{'))
         {
             tokenizer.advanceTillValid();
             if (tokenizer.tokenType() == KEYWORD)
             {
-                writer.writeLine(tokenizer.getXML());
+                //writer.writeLine(tokenizer.getXML());
             }
 
             if (tokenizer.tokenType() == IDENTIFIER)
             {
-                writer.writeLine(tokenizer.getXML());
+                //writer.writeLine(tokenizer.getXML());
+                functionName = tokenizer.identifier();
             }
 
             if (tokenizer.tokenType() == SYMBOL)
             {
                 if (tokenizer.symbol() == '{')
                 {
-                    writer.writeLine("<subroutineBody>");
+                    //writer.writeLine("<subroutineBody>");
                 }
-                writer.writeLine(tokenizer.getXML());
+                //writer.writeLine(tokenizer.getXML());
                 if (tokenizer.symbol() == '(')
                 {
                     compileParameterList();
@@ -1172,68 +1612,41 @@ class CompilationEngine
             tokenizer.advanceTillValid();
             // cout << tokenizer.keyWord() << endl;
             // cout<<tokenizer.keyWord()<<endl;
-            if (tokenizer.tokenType() == KEYWORD)
+            if (tokenizer.tokenType() == KEYWORD && tokenizer.keyWord() == VAR)
             {
-                if (tokenizer.keyWord() == VAR)
-                {
-                    compileVarDec();
-                }
+                compileVarDec();
 
                 // vector<int> statementKeywords{LET, IF, WHILE, DO, RETURN};
-                else
-                {
-
-                    compileStatements();
-                }
             }
 
-            else if (tokenizer.tokenType() != INVALID)
+            else
             {
+                numberOfLocals = table.varCount(VAR);
+                writerVM.writeFunction(functionName, to_string(numberOfLocals));
+                if (keyword == METHOD)
+                {
+                    writerVM.writePush("argument", "0");
+                    writerVM.writePop("pointer", "0");
+                }
+
+                if (keyword == CONSTRUCTOR)
+                {
+                    writerVM.writePush("constant", to_string(table.varCount(FIELD)));
+                    writerVM.writeCall("Memory.alloc", "1");
+                    writerVM.writePop("pointer", "0");
+                }
+
+                //What does consturcotr return
                 compileStatements();
             }
         }
 
-        writer.writeLine("</subroutineBody>");
+        //writer.writeLine("</subroutineBody>");
 
-        writer.writeLine("</subroutineDec>");
+        //writer.writeLine("</subroutineDec>");
     }
 };
 
-class SymbolTable{
-
-    map<string, symbolInformation> classScope;
-    map<string, symbolInformation> subroutineScope;
-
-
-    void startSubroutine(){
-        subroutineScope.erase(subroutineScope.begin(), subroutineScope.end());
-
-    }
-
-    void define(string name, string type, int kind)
-    {
-
-    }
-
-    int varCount(int kind)
-    {
-
-    }
-
-    string typeOf(string name)
-    {
-
-    }
-
-    string indexOf(string name)
-    {
-
-    }
-
-
-
-
-};
 /*For each construct, we have a particular way of wiritng it
 For instance, a function consists of the function keyword
 */
@@ -1254,7 +1667,7 @@ class JackAnalyzer
 
         JackTokenizer tokenizer(filepath);
         string outputPath = filepath;
-        outputPath = outputPath.substr(0, outputPath.size() - 4) + "TT.xml";
+        outputPath = outputPath.substr(0, outputPath.size() - 5) + ".vm";
         CompilationEngine engine(tokenizer, outputPath.c_str());
 
         // tokenizer.test(outputPath.c_str());
