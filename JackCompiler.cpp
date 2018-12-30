@@ -920,6 +920,9 @@ class VMWriter
         writer.writeLine("if-goto " + label);
     }
 
+    //FIX THIS
+    //What if it is a variable name
+
     void writeCall(string functionName, string args)
     {
         if (functionName.find(".") == -1)
@@ -1148,18 +1151,18 @@ class CompilationEngine
             if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '.')
             {
                 identifier = functionName;
-                functionName = functionName + ".";
+                // functionName = functionName + ".";
             }
             if (tokenizer.tokenType() == IDENTIFIER)
             {
-                functionName += tokenizer.identifier();
+                functionName=tokenizer.identifier();
             }
 
             if (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '(')
             {
                 // //writer.writeLine(tokenizer.getXML());
 
-                if (identifier.find(".") == -1)
+                if (identifier=="")
                 {
                     numberOfArguments++;
                     writerVM.writePush("pointer", "0");
@@ -1169,12 +1172,21 @@ class CompilationEngine
                 {
                     numberOfArguments++;
                     writerVM.writePush(table.getSegment(identifier), to_string(table.indexOf(identifier)));
+                    functionName = table.typeOf(identifier)+"."+functionName;
+
                 }
+
+                else{
+                    functionName = identifier+"."+functionName;
+                }
+
+                
                 numberOfArguments += compileExpressionList();
             }
         }
 
         writerVM.writeCall(functionName, to_string(numberOfArguments));
+        writerVM.writePop("temp", "0");
         //writer.writeLine("</doStatement>");
     }
 
@@ -1187,6 +1199,10 @@ class CompilationEngine
         string segment = table.getSegment(identifierName);
         string index = to_string(table.indexOf(identifierName));
         int kind = table.kindOf(identifierName);
+        writerVM.writePush(segment, index);
+        // writerVM.writePop("temp", "0");
+
+        bool isArray = false;
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
 
@@ -1203,13 +1219,21 @@ class CompilationEngine
                     compileExpression();
                     writerVM.writePush(segment, index);
                     writerVM.writeArithmetic('+');
-                    writerVM.writePop("pointer", "1");
-                    segment = "that";
-                    index = "0";
+                    writerVM.writePop("temp", "0");
+                    isArray = true;
+                    
                 }
                 else if (tokenizer.symbol() == '=')
                 {
                     compileExpression();
+                    if(isArray)
+                    {
+                        writerVM.writePush("temp", "0");
+                    writerVM.writePop("pointer", "1");
+                        segment = "that";
+                        index = "0";
+                    }
+                    
                     writerVM.writePop(segment, index);
                 }
                 //Here write the array part
@@ -1227,7 +1251,10 @@ class CompilationEngine
     {
         //writer.writeLine("<whileStatement>");
         //writer.writeLine(tokenizer.getXML());
-        writerVM.writeLabel("while" + to_string(labelCount));
+
+        int presentLabelCount = labelCount;
+        labelCount++;
+        writerVM.writeLabel("while" + to_string(presentLabelCount));
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == '}'))
         {
             tokenizer.advanceTillValid();
@@ -1238,21 +1265,21 @@ class CompilationEngine
                 {
                     compileExpression();
                     writerVM.writeArithmetic('~');
-                    writerVM.writeIf("endwhile" + to_string(labelCount));
+                    writerVM.writeIf("endwhile" + to_string(presentLabelCount));
                     // writerVM.writeLine(tokenizer.getXML());
                 }
 
                 if (tokenizer.symbol() == '{')
                 {
                     compileStatements();
-                    writerVM.writeGoto("while" + to_string(labelCount));
+                    writerVM.writeGoto("while" + to_string(presentLabelCount));
                 }
             }
         }
 
-        writerVM.writeLabel("endwhile" + to_string(labelCount));
+        writerVM.writeLabel("endwhile" + to_string(presentLabelCount));
 
-        labelCount++;
+        
         //writer.writeLine("</whileStatement>");
     }
     //TODO Make return void correct
@@ -1262,16 +1289,22 @@ class CompilationEngine
         //writer.writeLine("<returnStatement>");
         //writer.writeLine(tokenizer.getXML());
 
+        bool isVoid = true;
         while (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
         {
             tokenizer.advanceTillValid();
             if (!(tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ';'))
             {
+                isVoid = false;
                 tokenizer.rollBack();
                 compileExpression();
             }
         }
 
+        if(isVoid)
+        {
+            writerVM.writePush("constant", "0");
+        }
         writerVM.writeReturn();
 
         //writer.writeLine(tokenizer.getXML());
@@ -1285,6 +1318,9 @@ class CompilationEngine
     {
         //writer.writeLine("<ifStatement>");
         //writer.writeLine(tokenizer.getXML());
+
+        int presentLabelCount = labelCount;
+        labelCount++;
         if (tokenizer.keyWord() == IF)
         {
 
@@ -1298,7 +1334,7 @@ class CompilationEngine
                     {
                         compileExpression();
                         writerVM.writeArithmetic('~');
-                        writerVM.writeIf("noiflabel" + to_string(labelCount));
+                        writerVM.writeIf("noiflabel" + to_string(presentLabelCount));
                         //writer.writeLine(tokenizer.getXML());
                     }
 
@@ -1307,14 +1343,14 @@ class CompilationEngine
                         // tokenizer.advance();
 
                         compileStatements();
-                        writerVM.writeGoto("endif" + to_string(labelCount));
+                        writerVM.writeGoto("endif" + to_string(presentLabelCount));
                     }
                 }
             }
             //Loop
         }
 
-        writerVM.writeLabel("noiflabel" + to_string(labelCount));
+        writerVM.writeLabel("noiflabel" + to_string(presentLabelCount));
 
         tokenizer.advanceTillValid();
         if (tokenizer.keyWord() == ELSE)
@@ -1333,7 +1369,7 @@ class CompilationEngine
                 }
             }
 
-            writerVM.writeGoto("endif" + to_string(labelCount));
+            writerVM.writeGoto("endif" + to_string(presentLabelCount));
         }
 
         else
@@ -1341,9 +1377,9 @@ class CompilationEngine
             tokenizer.rollBack();
         }
 
-        writerVM.writeLabel("endif" + to_string(labelCount));
+        writerVM.writeLabel("endif" + to_string(presentLabelCount));
 
-        labelCount++;
+
         //writer.writeLine("</ifStatement>");
     }
 
@@ -1395,15 +1431,23 @@ class CompilationEngine
                 {
                     //writer.writeLine(tokenizer.getXML());
                     tokenizer.advanceTillValid();
-                    string toCall = currentObject + '.' + tokenizer.identifier();
+                    string name = tokenizer.identifier();
+                    string toCall = "";
                     //writer.writeLine(tokenizer.getXML());
                     tokenizer.advanceTillValid();
                     //writer.writeLine(tokenizer.getXML());
+                     int numberOfArguments=0;
                     if (table.kindOf(currentObject) != NONE)
                     {
+                        numberOfArguments = 1;
                         writerVM.writePush(table.getSegment(currentObject), to_string(table.indexOf(currentObject)));
+                        toCall = table.typeOf(currentObject) + '.'+name;
                     }
-                    int numberOfArguments = compileExpressionList();
+
+                    else{
+                        toCall = currentObject + "." + name;
+                    }
+                    numberOfArguments+= compileExpressionList();
                     //push this too
                     //Also have to modify htis for consturctors
                     writerVM.writeCall(toCall, to_string(numberOfArguments));
@@ -1418,7 +1462,7 @@ class CompilationEngine
                     writerVM.writeCall(currentObject, to_string(numberOfArguments));
                     break;
                 }
-                case '[':
+                case     '[':
                 {
                     //writer.writeLine(tokenizer.getXML());
                     compileExpression();
@@ -1477,11 +1521,13 @@ class CompilationEngine
         else if (tokenizer.tokenType() == STRING_CONST)
         {
             string value = tokenizer.stringVal();
-            writerVM.writePush("constant", to_string(value.size()));
+            writerVM.writePush("constant", to_string(value.length()));
             writerVM.writeCall("String.new", "1");
-            for(int i=0; i<value.size(); i++)
+            for(int i=0; i<value.length(); i++)
             {
                 int c = value[i];
+                writerVM.writePush("constant", to_string(c));
+                writerVM.writeCall("String.appendChar", "2");
                 // writerVM.
                 //handle identifier 
             }
@@ -1533,34 +1579,62 @@ class CompilationEngine
     }
 
     //Figure out a better way for the return, and for all  other statements
+    //Fix this
     int compileExpressionList()
     {
         //writer.writeLine("<expressionList>");
         int numberOfArguments = 0;
-        do
+        if(tokenizer.tokenType()==SYMBOL&&tokenizer.symbol()=='(')
         {
             tokenizer.advanceTillValid();
-            if (tokenizer.tokenType() != SYMBOL || tokenizer.symbol() == '(')
-            {
-                tokenizer.rollBack();
-                compileExpression();
-                numberOfArguments++;
-            }
-            else if (tokenizer.tokenType() == SYMBOL)
-            {
-                if (tokenizer.symbol() != '(')
-                {
-                    compileExpression();
-                }
-            }
 
-        } while (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ',');
-
-        //writer.writeLine("</expressionList>");
-        if (tokenizer.tokenType() == SYMBOL)
-        {
-            //writer.writeLine(tokenizer.getXML());
         }
+
+        if(!(tokenizer.tokenType()==SYMBOL&&tokenizer.symbol()==')')){
+            tokenizer.rollBack();
+            compileExpression();
+            numberOfArguments++;
+        }
+
+        while(tokenizer.tokenType()==SYMBOL&&tokenizer.symbol()==',')
+        {
+            
+            compileExpression();
+            numberOfArguments++;
+        }
+        // int numberOfArguments = 0;
+        // do{
+        //     if(tokenizer.tokenType())
+        // }while(tokenizer.tokenType()==SYMBOL&&tokenizer.symbol()==',');
+        // // do
+        // {
+        //     tokenizer.advanceTillValid();
+        //     if (tokenizer.tokenType() != SYMBOL || tokenizer.symbol() == '(')
+        //     {
+        //         tokenizer.rollBack();
+        //         compileExpression();
+        //         numberOfArguments++;
+        //     }
+        //     else if (tokenizer.tokenType() == SYMBOL)
+        //     {
+        //         if (tokenizer.symbol() != '(')
+        //         {
+        //             compileExpression();
+        //             numberOfArguments++;
+        //         }
+
+            
+        //     }
+
+        // } while (tokenizer.tokenType() == SYMBOL && tokenizer.symbol() == ',');
+
+        // //writer.writeLine("</expressionList>");
+        // if (tokenizer.tokenType() == SYMBOL)
+        // {
+        //     //writer.writeLine(tokenizer.getXML());
+        // }
+
+        
 
         return numberOfArguments;
     }
